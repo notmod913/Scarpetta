@@ -3,18 +3,26 @@ import path from 'path';
 import fetch from 'node-fetch';
 import { google } from 'googleapis';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
+// Load environment variables from .env
+dotenv.config();
+
+// Required for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Constants
 const BASE_URL = 'https://api.jikan.moe/v4';
-const MAX_PAGES = 1151;
+const MAX_PAGES = 1155;
 const DELAY_MS = 1500;
 const TEMP_OUTPUT_FILE = path.join(__dirname, 'characters.json');
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+// Sleep helper
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Upload to Google Drive
 async function uploadToGoogleDrive(authClient, filePath, fileName) {
   const drive = google.drive({ version: 'v3', auth: authClient });
 
@@ -48,7 +56,14 @@ async function uploadToGoogleDrive(authClient, filePath, fileName) {
 }
 
 async function main() {
-  const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+  // Parse service account JSON from env variable
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error('❌ Failed to parse GOOGLE_SERVICE_ACCOUNT JSON:', err.message);
+    process.exit(1);
+  }
 
   const auth = new google.auth.GoogleAuth({
     credentials: serviceAccount,
@@ -57,14 +72,19 @@ async function main() {
 
   const authClient = await auth.getClient();
 
-  // To track duplicates without loading entire file:
-  const existingNames = new Set();
+  // Load existing data
+  let results = [];
+  if (fs.existsSync(TEMP_OUTPUT_FILE)) {
+    try {
+      const raw = fs.readFileSync(TEMP_OUTPUT_FILE, 'utf-8').trim();
+      results = raw ? JSON.parse(raw) : [];
+      console.log(`📂 Loaded ${results.length} characters from local file`);
+    } catch (err) {
+      console.warn(`⚠️ Failed to parse local file: ${err.message}`);
+    }
+  }
 
-  // Open file for streaming write
-  const stream = fs.createWriteStream(TEMP_OUTPUT_FILE, { flags: 'w' });
-  stream.write('['); // start JSON array
-
-  let isFirst = true;
+  const existingNames = new Map(results.map((char) => [char.name, char]));
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     console.log(`📄 Fetching character page ${page}`);
@@ -96,15 +116,8 @@ async function main() {
           anime_titles,
         };
 
-        // Add comma if not the first entry
-        if (!isFirst) {
-          stream.write(',\n');
-        } else {
-          isFirst = false;
-        }
-
-        stream.write(JSON.stringify(newChar));
-        existingNames.add(char.name);
+        results.push(newChar);
+        existingNames.set(char.name, newChar);
 
         await sleep(DELAY_MS);
       }
@@ -115,13 +128,12 @@ async function main() {
     await sleep(DELAY_MS);
   }
 
-  stream.write(']\n'); // end JSON array
-  stream.end();
-
-  console.log(`✅ Finished writing characters to ${TEMP_OUTPUT_FILE}`);
+  fs.writeFileSync(TEMP_OUTPUT_FILE, JSON.stringify(results, null, 2));
+  console.log(`✅ Saved ${results.length} characters to local file`);
 
   await uploadToGoogleDrive(authClient, TEMP_OUTPUT_FILE, 'characters.json');
 }
 
 main();
+
 

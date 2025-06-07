@@ -13,10 +13,8 @@ const DELAY_MS = 1500;
 const TEMP_OUTPUT_FILE = path.join(__dirname, 'characters.json');
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
-// Helper sleep function
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-// Upload to Google Drive
 async function uploadToGoogleDrive(authClient, filePath, fileName) {
   const drive = google.drive({ version: 'v3', auth: authClient });
 
@@ -50,26 +48,23 @@ async function uploadToGoogleDrive(authClient, filePath, fileName) {
 }
 
 async function main() {
-  const auth = new google.auth.JWT({
-    email: process.env.GOOGLE_CLIENT_EMAIL,
-    key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+
+  const auth = new google.auth.GoogleAuth({
+    credentials: serviceAccount,
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   });
 
-  const authClient = await auth;
+  const authClient = await auth.getClient();
 
-  let results = [];
-  if (fs.existsSync(TEMP_OUTPUT_FILE)) {
-    try {
-      const raw = fs.readFileSync(TEMP_OUTPUT_FILE, 'utf-8').trim();
-      results = raw ? JSON.parse(raw) : [];
-      console.log(`📂 Loaded ${results.length} characters from local file`);
-    } catch (err) {
-      console.warn(`⚠️ Failed to parse local file: ${err.message}`);
-    }
-  }
+  // To track duplicates without loading entire file:
+  const existingNames = new Set();
 
-  const existingNames = new Map(results.map((char) => [char.name, char]));
+  // Open file for streaming write
+  const stream = fs.createWriteStream(TEMP_OUTPUT_FILE, { flags: 'w' });
+  stream.write('['); // start JSON array
+
+  let isFirst = true;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     console.log(`📄 Fetching character page ${page}`);
@@ -101,8 +96,15 @@ async function main() {
           anime_titles,
         };
 
-        results.push(newChar);
-        existingNames.set(char.name, newChar);
+        // Add comma if not the first entry
+        if (!isFirst) {
+          stream.write(',\n');
+        } else {
+          isFirst = false;
+        }
+
+        stream.write(JSON.stringify(newChar));
+        existingNames.add(char.name);
 
         await sleep(DELAY_MS);
       }
@@ -113,8 +115,10 @@ async function main() {
     await sleep(DELAY_MS);
   }
 
-  fs.writeFileSync(TEMP_OUTPUT_FILE, JSON.stringify(results, null, 2));
-  console.log(`✅ Saved ${results.length} characters to local file`);
+  stream.write(']\n'); // end JSON array
+  stream.end();
+
+  console.log(`✅ Finished writing characters to ${TEMP_OUTPUT_FILE}`);
 
   await uploadToGoogleDrive(authClient, TEMP_OUTPUT_FILE, 'characters.json');
 }

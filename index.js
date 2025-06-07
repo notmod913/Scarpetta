@@ -4,18 +4,16 @@ import fetch from 'node-fetch';
 import { google } from 'googleapis';
 import { fileURLToPath } from 'url';
 
-// Required for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Constants
 const BASE_URL = 'https://api.jikan.moe/v4';
 const MAX_PAGES = 1151;
 const DELAY_MS = 1500;
 const TEMP_OUTPUT_FILE = path.join(__dirname, 'characters.json');
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
-// Sleep helper
+// Helper sleep function
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Upload to Google Drive
@@ -52,17 +50,14 @@ async function uploadToGoogleDrive(authClient, filePath, fileName) {
 }
 
 async function main() {
-  // Parse service account JSON from env variable
-  const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-
-  const auth = new google.auth.GoogleAuth({
-    credentials: serviceAccount,
+  const auth = new google.auth.JWT({
+    email: process.env.GOOGLE_CLIENT_EMAIL,
+    key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   });
 
-  const authClient = await auth.getClient();
+  const authClient = await auth;
 
-  // Load existing data
   let results = [];
   if (fs.existsSync(TEMP_OUTPUT_FILE)) {
     try {
@@ -125,3 +120,4 @@ async function main() {
 }
 
 main();
+

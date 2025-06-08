@@ -135,20 +135,5 @@ async function main() {
 }
 
 main();
-import express from 'express';
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get('/characters', (req, res) => {
-  if (fs.existsSync(TEMP_OUTPUT_FILE)) {
-    res.download(TEMP_OUTPUT_FILE); // triggers file download
-  } else {
-    res.status(404).send('File not found');
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Web server running on port ${PORT}`);
-});
 
 
